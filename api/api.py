@@ -73,16 +73,47 @@ def api_get_tische_filter():
 
 @app.route('/api/v1/tische/filter/tische', methods=['GET'])
 def api_get_all_tische():
-    conn = sqlite3.connect('../buchungssystem.sqlite')
-    conn.row_factory = dict_factory
-    cur = conn.cursor()
-
-    result = cur.execute(f'SELECT * FROM tische;').fetchall()
+    result = get_all_tische()
 
     if not result:
         return page_not_found(404, f"Es wurden keine Tische gefunden.")
 
     return json.dumps(result)
+
+
+def get_all_tische():
+    conn = sqlite3.connect('../buchungssystem.sqlite')
+    conn.row_factory = dict_factory
+    cur = conn.cursor()
+    result = cur.execute(f'SELECT * FROM tische;').fetchall()
+    return result
+
+
+@app.route('/api/v1/tische/filter/reservierungen/free/all', methods=['GET'])
+def api_get_free_reservierungen():
+    conn = sqlite3.connect('../buchungssystem.sqlite')
+    conn.row_factory = dict_factory
+    cur = conn.cursor()
+
+    blocked_tables = get_all_blocked_tische()
+    all_tables = get_all_tische()
+
+    if all_tables is None:
+        return page_not_found_message(404, "Es wurden keine Tische gefunden.")
+    elif blocked_tables is None:
+        return jsonify(all_tables)
+
+    free_tables = []
+
+    for table in all_tables:
+        table_number = table["tischnummer"]
+
+        is_blocked = any(table_number == blocked_table["tischnummer"] for blocked_table in blocked_tables)
+
+        if not is_blocked:
+            free_tables.append(table)
+
+    return jsonify(free_tables)
 
 
 @app.route('/api/v1/tische/filter/reservierungen/blocked', methods=['GET'])
@@ -111,11 +142,7 @@ def api_get_bocked_reservierungen():
 
 @app.route('/api/v1/tische/filter/reservierungen/blocked/all', methods=['GET'])
 def api_get_all_blocked_reservierungen():
-    conn = sqlite3.connect('../buchungssystem.sqlite')
-    conn.row_factory = dict_factory
-    cur = conn.cursor()
-
-    result = cur.execute(f"select * from reservierungen where storniert = 'False';").fetchall()
+    result = get_all_blocked_tische()
 
     if not result:
         return page_not_found_message(404, f"Es wurden keine Reservierungen gefunden")
@@ -123,38 +150,17 @@ def api_get_all_blocked_reservierungen():
     return result
 
 
-@app.route('/api/v1/tische/filter/reservierungen/free/all', methods=['GET'])
-def api_get_free_reservierungen():
+def get_all_blocked_tische():
     conn = sqlite3.connect('../buchungssystem.sqlite')
     conn.row_factory = dict_factory
     cur = conn.cursor()
-
-    blocked_tables = api_get_all_blocked_reservierungen()
-    all_tables = api_get_all_tische()
-
-    if all_tables is None:
-        return page_not_found_message(404, "Es wurden keine Tische gefunden.")
-    elif blocked_tables is None:
-        return jsonify(all_tables)
-
-    free_tables = []
-
-    all_tables = json.loads(all_tables)
-
-    for table in all_tables:
-        table_number = table["tischnummer"]
-
-        is_blocked = any(table_number == blocked_table["tischnummer"] for blocked_table in blocked_tables)
-
-        if not is_blocked:
-            free_tables.append(table)
-
-    return jsonify(free_tables)
+    result = cur.execute(f"select * from reservierungen where storniert = 'False';").fetchall()
+    return result
 
 
-@app.errorhandler(404)
+@app.errorhandler(400)
 def page_not_found_message(e, message):
-    return f"<h1>404</h1><p>{str(message)}.</p>", 404
+    return f"<h1>404</h1><p>{str(message)}.</p>", 400
 
 
 @app.errorhandler(404)
