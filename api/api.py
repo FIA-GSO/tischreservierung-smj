@@ -1,3 +1,5 @@
+import json
+
 import flask
 from flask import request, jsonify
 import sqlite3
@@ -16,7 +18,29 @@ app.config["DEBUG"] = True
 
 @app.route('/', methods=['GET'])
 def home():
-    return '''<h1>Test</h1>'''
+    return '''
+    <h1>Test</h1>
+    <ol>
+        <li>
+            <a href='/api/v1/tische/all'>Alle Tische</a>
+        </li>
+        <br>
+        <li>
+            <a href='/api/v1/tische/filter/tischnummer?id=2'>Info: Tischnummer 2</a>
+        </li>
+        <br>
+        <li>
+            <a href='/api/v1/tische/filter/reservierungen/blocked?date=2022-02-02&time=19:30:00'>Geblockte Tische am 2022-02-02 19:30:00</a>
+        </li>
+        <br>
+        <li>
+            <a href='/api/v1/tische/filter/reservierungen/blocked/all'>Alle geblockten Tische</a>
+        </li>
+        <br>
+        <li>
+            <a href='/api/v1/tische/filter/reservierungen/free/all'>Alle freien Tische (all time)</a>
+        </li>
+        '''
 
 
 @app.route('/api/v1/tische/all', methods=['GET'])
@@ -47,6 +71,20 @@ def api_get_tische_filter():
     return jsonify(result)
 
 
+@app.route('/api/v1/tische/filter/tische', methods=['GET'])
+def api_get_all_tische():
+    conn = sqlite3.connect('../buchungssystem.sqlite')
+    conn.row_factory = dict_factory
+    cur = conn.cursor()
+
+    result = cur.execute(f'SELECT * FROM tische;').fetchall()
+
+    if not result:
+        return page_not_found(404, f"Es wurden keine Tische gefunden.")
+
+    return json.dumps(result)
+
+
 @app.route('/api/v1/tische/filter/reservierungen/blocked', methods=['GET'])
 def api_get_bocked_reservierungen():
     conn = sqlite3.connect('../buchungssystem.sqlite')
@@ -71,28 +109,47 @@ def api_get_bocked_reservierungen():
     return jsonify(result)
 
 
-@app.route('/api/v1/tische/filter/reservierungen/free', methods=['GET'])
+@app.route('/api/v1/tische/filter/reservierungen/blocked/all', methods=['GET'])
+def api_get_all_blocked_reservierungen():
+    conn = sqlite3.connect('../buchungssystem.sqlite')
+    conn.row_factory = dict_factory
+    cur = conn.cursor()
+
+    result = cur.execute(f"select * from reservierungen where storniert = 'False';").fetchall()
+
+    if not result:
+        return page_not_found_message(404, f"Es wurden keine Reservierungen gefunden")
+
+    return result
+
+
+@app.route('/api/v1/tische/filter/reservierungen/free/all', methods=['GET'])
 def api_get_free_reservierungen():
     conn = sqlite3.connect('../buchungssystem.sqlite')
     conn.row_factory = dict_factory
     cur = conn.cursor()
 
-    query_parameters = request.args
+    blocked_tables = api_get_all_blocked_reservierungen()
+    all_tables = api_get_all_tische()
 
-    time = query_parameters.get('time')
-    date = query_parameters.get('date')
+    if all_tables is None:
+        return page_not_found_message(404, "Es wurden keine Tische gefunden.")
+    elif blocked_tables is None:
+        return jsonify(all_tables)
 
-    if time is None or date is None:
-        return page_not_found_message(404, "Es wurde keine Zeit angegeben")
+    free_tables = []
 
-    complete_date = f"{date} {time}"
+    all_tables = json.loads(all_tables)
 
-    result = cur.execute(f"").fetchall()
+    for table in all_tables:
+        table_number = table["tischnummer"]
 
-    if not result:
-        return page_not_found_message(404, f"Es wurden keine Reservierungen um {time} Uhr am {date} gefunden")
+        is_blocked = any(table_number == blocked_table["tischnummer"] for blocked_table in blocked_tables)
 
-    return jsonify(result)
+        if not is_blocked:
+            free_tables.append(table)
+
+    return jsonify(free_tables)
 
 
 @app.errorhandler(404)
@@ -102,7 +159,9 @@ def page_not_found_message(e, message):
 
 @app.errorhandler(404)
 def page_not_found(e):
-    return f"<h1>404</h1><p>Seite konnte nicht gefunden werden.</p>", 404
+    return f"<h1>404</h1><p>Seite konnte nicht gefunden werden.</p><br><br>", 404
 
 
 app.run()
+
+
